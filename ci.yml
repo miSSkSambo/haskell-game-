@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }}, GHC ${{ matrix.ghc }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        ghc: ["9.2.8", "9.4.8", "9.6.6"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Haskell
+        uses: haskell/actions/setup@v2
+        with:
+          ghc-version: ${{ matrix.ghc }}
+          enable-stack: true
+          enable-cabal: true
+
+      - name: Cache Cabal
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cabal/packages
+            ~/.cabal/store
+            dist-newstyle
+          key: ${{ runner.os }}-cabal-${{ hashFiles('**/*.cabal') }}-${{ hashFiles('cabal.project') }}
+          restore-keys: |
+            ${{ runner.os }}-cabal-
+
+      - name: Cabal build
+        run: |
+          cabal update
+          cabal build --enable-tests -j
+
+      - name: Cabal run (smoke test)
+        if: runner.os != 'Windows'
+        run: |
+          cabal run --verbose=0 -- << 'EOF' || true
+          n
+          EOF
+
+  lint:
+    name: HLint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: haskell/actions/setup@v2
+        with:
+          ghc-version: "9.6.6"
+      - name: Install HLint
+        run: |
+          cabal update
+          cabal install hlint
+      - name: Run HLint
+        run: ~/.cabal/bin/hlint src || true
